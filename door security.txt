@@ -1,0 +1,115 @@
+#include <SPI.h>
+#include <MFRC522.h>
+// rfid pins
+#define SS_PIN 10
+#define RST_PIN 9
+//led pins
+#define GREEN_LED 5
+#define RED_LED   6
+#define RELAY_PIN 7
+
+class DoorSecuritySystem {
+  private:
+    MFRC522 rfid;
+    String authorizedUIDs[1] = {
+      "83:4B:38:1C"  
+    };
+public:
+    //constructor
+    DoorSecuritySystem() : rfid(SS_PIN, RST_PIN) {}
+
+    void begin() {
+      Serial.begin(9600);
+      SPI.begin();
+      rfid.PCD_Init();
+      pinMode(GREEN_LED, OUTPUT);
+      pinMode(RED_LED, OUTPUT);
+      pinMode(RELAY_PIN, OUTPUT);
+    digitalWrite(RELAY_PIN, HIGH); 
+      Serial.println("RFID Door Security System Ready");
+    }
+    void checkCard() {
+      if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial())
+        return;
+
+      if (!isValidCardType()) {
+        Serial.println("Invalid RFID Card");
+        haltRFID();
+        return;
+      }
+
+      String uid = readUID();
+      Serial.print("Card UID: ");
+      Serial.println(uid);
+
+      if (isAuthorized(uid)) {
+        grantAccess();
+      } else {
+        denyAccess();
+      }
+
+      haltRFID();
+    }
+
+  private:
+    //checking card type
+    bool isValidCardType() {
+      MFRC522::PICC_Type type = rfid.PICC_GetType(rfid.uid.sak);
+      return (type == MFRC522::PICC_TYPE_MIFARE_MINI ||
+              type == MFRC522::PICC_TYPE_MIFARE_1K ||
+              type == MFRC522::PICC_TYPE_MIFARE_4K);
+    }
+
+    String readUID() {
+      String id = "";
+      for (byte i = 0; i < rfid.uid.size; i++) {
+        id =id + (rfid.uid.uidByte[i] < 0x10 ? "0" : "");
+        id =id + String(rfid.uid.uidByte[i], HEX);
+        if (i < rfid.uid.size - 1)
+          id =id + ":";
+      }
+      id.toUpperCase();
+      return id;
+    }
+
+    bool isAuthorized(String uid) {
+      for (int i = 0; i < 1; i++) {
+        if (uid == authorizedUIDs[i])
+          return true;
+      }
+      return false;
+    }
+
+    void grantAccess() {
+      Serial.println("Access Granted");
+       digitalWrite(GREEN_LED, HIGH);
+      digitalWrite(RED_LED, LOW);
+      digitalWrite(RELAY_PIN, LOW);   // Unlock door
+       delay(3000);
+       digitalWrite(RELAY_PIN, HIGH);  // Lock door
+      digitalWrite(GREEN_LED, LOW);
+    }
+   //incase access is denied
+    void denyAccess() {
+      Serial.println("Access Denied");
+     digitalWrite(GREEN_LED, LOW);
+      digitalWrite(RED_LED, HIGH);
+      digitalWrite(RELAY_PIN, HIGH);
+      delay(1000);
+      digitalWrite(RED_LED, LOW);
+    }
+//stopping communication
+    void haltRFID() {
+      rfid.PICC_HaltA();
+      rfid.PCD_StopCrypto1();
+    }
+};
+DoorSecuritySystem door;
+void setup() {
+  door.begin();
+}
+
+void loop() {
+  door.checkCard();
+}
+
